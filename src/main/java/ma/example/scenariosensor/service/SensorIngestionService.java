@@ -6,10 +6,6 @@ import ma.example.scenariosensor.entity.Measurement;
 import ma.example.scenariosensor.entity.MeasurementStatus;
 import ma.example.scenariosensor.entity.Severity;
 import ma.example.scenariosensor.repository.MeasurementRepository;
-import ma.example.scenariosensor.service.EvaluationService;
-import ma.example.scenariosensor.service.IncidentService;
-import ma.example.scenariosensor.service.RealtimeService;
-import ma.example.scenariosensor.service.ScenarioService;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -24,46 +20,43 @@ public class SensorIngestionService {
 
     public void ingest(SensorData raw) {
 
-        // 1️⃣ Apply scenario
+        // 1️⃣ Apply scenario (acceleration, stress, etc.)
         SensorData contextual = scenarioService.applyScenario(raw);
 
-        // 2️⃣ Evaluate
+        // 2️⃣ Evaluate FIRST (pure logic, fast)
         MeasurementStatus status = evaluationService.evaluate(contextual);
 
-        // 3️⃣ Build measurement
+        // 3️⃣ Build measurement WITH final status
         Measurement m = Measurement.builder()
                 .temperature(contextual.getTemperature())
                 .humidity(contextual.getHumidity())
                 .status(status)
                 .build();
 
-        // 4️⃣ Incident if abnormal
-        // 4️⃣ Incident if abnormal
-        if (status != MeasurementStatus.OK) {
-
-            String type;
-            Severity severity;
-
-            if (status == MeasurementStatus.CRITICAL) {
-                type = "HIGH_TEMPERATURE";
-                severity = Severity.CRITICAL;
-            } else {
-                type = "HIGH_TEMPERATURE";
-                severity = Severity.WARNING;
-            }
+        // 4️⃣ If abnormal → create incident (SIDE EFFECT)
+        // 4️⃣ Incident handling (SIDE EFFECTS)
+        if (status == MeasurementStatus.CRITICAL) {
 
             incidentService.create(
-                    type,
-                    severity,
+                    "HIGH_TEMPERATURE",
+                    Severity.CRITICAL,
+                    m.getTemperature()
+            );
+
+        } else if (status == MeasurementStatus.WARNING) {
+
+            // OPTIONAL: store incident but NO email
+            incidentService.createWarningOnly(
+                    "HIGH_TEMPERATURE",
                     m.getTemperature()
             );
         }
 
 
-        // 5️⃣ Store
-        measurementRepo.save(m);
+        // 5️⃣ STORE (single source of truth)
+        Measurement saved = measurementRepo.save(m);
 
-        // 6️⃣ Push real-time
-        realtimeService.push(m);
+        // 6️⃣ Real-time push AFTER store
+        realtimeService.push(saved);
     }
 }

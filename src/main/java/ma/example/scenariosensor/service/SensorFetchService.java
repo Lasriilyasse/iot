@@ -11,7 +11,7 @@ public class SensorFetchService {
 
     // 👉 use mDNS OR IP
     private static final String SENSOR_URL =
-            "http://esp32.local/api/sensors";
+            "http://192.168.137.69/api/sensors";
     // OR: "http://192.168.1.120/api/sensors"
 
     public SensorData fetch() {
