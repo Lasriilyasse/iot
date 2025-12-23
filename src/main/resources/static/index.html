@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Real-Time Sensor Dashboard</title>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            background: #0f172a;
+            color: #e5e7eb;
+            margin: 0;
+            height: 100vh;
+            overflow: hidden; /* no scroll */
+        }
+
+        .dashboard {
+            max-width: 1000px;
+            height: 100vh;
+            margin: auto;
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        h2 {
+            text-align: center;
+            margin: 4px 0 6px;
+            font-size: 20px;
+        }
+
+        /* BUTTONS */
+        .buttons {
+            text-align: center;
+            margin-bottom: 6px;
+        }
+
+        button {
+            background: #2563eb;
+            color: white;
+            border: none;
+            padding: 6px 14px;
+            margin: 0 6px;
+            border-radius: 6px;
+            font-size: 13px;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background: #1d4ed8;
+        }
+
+        /* CARDS */
+        .cards {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+
+        .card {
+            flex: 1;
+            background: #1e293b;
+            border-radius: 8px;
+            padding: 8px;
+            text-align: center;
+        }
+
+        .card span.value {
+            font-size: 20px;
+            font-weight: bold;
+            display: block;
+            margin-top: 2px;
+        }
+
+        .status {
+            font-size: 14px;
+            margin-top: 2px;
+        }
+
+        .status.OK { color: #22c55e; }
+        .status.WARNING { color: #facc15; }
+        .status.CRITICAL { color: #ef4444; }
+
+        /* CHART */
+        .chart-container {
+            flex: 1;
+            min-height: 0; /* 🔑 prevents flex cropping */
+        }
+
+        canvas {
+            background: #020617;
+            border-radius: 8px;
+            width: 100% !important;
+            height: 100% !important;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="dashboard">
+    <h2>📡 Real-Time Sensor Dashboard</h2>
+
+    <!-- BUTTONS -->
+    <div class="buttons">
+        <button onclick="startScenario()">▶ Start Scenario</button>
+        <button onclick="resetScenario()">🔄 Reset</button>
+    </div>
+
+    <!-- CARDS -->
+    <div class="cards">
+        <div class="card">
+            🌡 Temperature
+            <span class="value" id="temp">--</span> °C
+        </div>
+
+        <div class="card">
+            💧 Humidity
+            <span class="value" id="hum">--</span> %
+        </div>
+
+        <div class="card">
+            ⚠ Status
+            <div id="status" class="status">--</div>
+        </div>
+    </div>
+
+    <!-- CHART -->
+    <div class="chart-container">
+        <canvas id="sensorChart"></canvas>
+    </div>
+</div>
+
+<script>
+    const tempEl = document.getElementById("temp");
+    const humEl = document.getElementById("hum");
+    const statusEl = document.getElementById("status");
+
+    const MAX_POINTS = 60;
+
+    const sensorChart = new Chart(
+        document.getElementById("sensorChart"),
+        {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [
+                    {
+                        label: 'Temperature (°C)',
+                        data: [],
+                        borderColor: '#ef4444',
+                        yAxisID: 'yTemp',
+                        tension: 0.3,
+                        pointRadius: 0
+                    },
+                    {
+                        label: 'Humidity (%)',
+                        data: [],
+                        borderColor: '#38bdf8',
+                        yAxisID: 'yHum',
+                        tension: 0.3,
+                        pointRadius: 0
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                layout: {
+                    padding: {
+                        top: 10,
+                        right: 10,
+                        bottom: 10,
+                        left: 10
+                    }
+                },
+                plugins: {
+                    legend: {
+                        labels: { color: '#e5e7eb' }
+                    }
+                },
+                scales: {
+                    x: {
+                        ticks: { color: '#94a3b8' }
+                    },
+                    yTemp: {
+                        type: 'linear',
+                        position: 'left',
+                        ticks: { color: '#ef4444' },
+                        title: {
+                            display: true,
+                            text: '°C',
+                            color: '#ef4444'
+                        }
+                    },
+                    yHum: {
+                        type: 'linear',
+                        position: 'right',
+                        grid: { drawOnChartArea: false },
+                        ticks: { color: '#38bdf8' },
+                        title: {
+                            display: true,
+                            text: '%',
+                            color: '#38bdf8'
+                        }
+                    }
+                }
+            }
+        }
+    );
+
+    const eventSource = new EventSource("/stream");
+
+    eventSource.onmessage = e => {
+        const m = JSON.parse(e.data);
+
+        tempEl.textContent = m.temperature.toFixed(1);
+        humEl.textContent = m.humidity.toFixed(1);
+
+        statusEl.textContent = m.status;
+        statusEl.className = "status " + m.status;
+
+        const timeLabel = new Date().toLocaleTimeString();
+
+        sensorChart.data.labels.push(timeLabel);
+        sensorChart.data.datasets[0].data.push(m.temperature);
+        sensorChart.data.datasets[1].data.push(m.humidity);
+
+        if (sensorChart.data.labels.length > MAX_POINTS) {
+            sensorChart.data.labels.shift();
+            sensorChart.data.datasets[0].data.shift();
+            sensorChart.data.datasets[1].data.shift();
+        }
+
+        sensorChart.update();
+    };
+
+    function startScenario() {
+        fetch('/scenario/start', { method: 'POST' });
+    }
+
+    function resetScenario() {
+        fetch('/scenario/reset', { method: 'POST' });
+    }
+</script>
+
+</body>
+</html>
